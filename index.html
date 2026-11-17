@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>投資資產看板</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      background-color: #f4f6f9;
+      margin: 0;
+      padding: 10px;
+      color: #333;
+    }
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+      background: #fff;
+      padding: 15px;
+      border-radius: 10px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+    }
+    .header-bar {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      margin-bottom: 15px;
+      gap: 8px;
+    }
+    .btn-update {
+      background-color: #2e7d32;
+      color: white;
+      border: none;
+      padding: 10px 24px;
+      font-size: 15px;
+      font-weight: bold;
+      border-radius: 8px;
+      cursor: pointer;
+      box-shadow: 0 2px 6px rgba(46, 125, 50, 0.3);
+      transition: background-color 0.2s;
+    }
+    .btn-update:hover {
+      background-color: #1b5e20;
+    }
+    .btn-update:disabled {
+      background-color: #9e9e9e;
+      cursor: not-allowed;
+    }
+    .status-text {
+      font-size: 12px;
+      color: #666;
+    }
+    .table-wrapper {
+      overflow-x: auto;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+      white-space: nowrap;
+    }
+    th {
+      background-color: #f4e87c;
+      color: #222;
+      font-weight: bold;
+      padding: 10px 8px;
+      text-align: right;
+      border-bottom: 2px solid #dcd060;
+    }
+    th:nth-child(1), th:nth-child(2) {
+      text-align: left;
+    }
+    td {
+      padding: 8px;
+      border-bottom: 1px solid #eee;
+      text-align: right;
+    }
+    td:nth-child(1), td:nth-child(2) {
+      text-align: left;
+    }
+    td:nth-child(1) {
+      font-weight: bold;
+    }
+    td:nth-child(2) {
+      color: #666;
+      font-size: 12px;
+    }
+    tr:hover {
+      background-color: #f9fbfd;
+    }
+    tr.total-row {
+      background-color: #f4e87c;
+      font-weight: bold;
+      border-top: 2px solid #ccc;
+    }
+    .up {
+      color: #d32f2f !important;
+      font-weight: bold;
+    }
+    .down {
+      color: #2e7d32 !important;
+      font-weight: bold;
+    }
+    .flat {
+      color: #222222 !important;
+      font-weight: bold;
+    }
+    .limit-up {
+      background-color: #d32f2f !important;
+      color: #ffffff !important;
+      font-weight: bold !important;
+      border-radius: 4px;
+      padding: 4px 6px;
+    }
+    .limit-down {
+      background-color: #2e7d32 !important;
+      color: #ffffff !important;
+      font-weight: bold !important;
+      border-radius: 4px;
+      padding: 4px 6px;
+    }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <div class="header-bar">
+    <button id="updateBtn" class="btn-update" onclick="updateData()">🔄 更新最新股價與淨值</button>
+    <div id="statusText" class="status-text">資料載入中...</div>
+  </div>
+
+  <div class="table-wrapper">
+    <table id="portfolioTable">
+      <thead id="tableHead"></thead>
+      <tbody id="tableBody"></tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+  var API_URL = 'https://script.google.com/macros/s/AKfycbwDvxAu6LyN2FQoUwEgJfSvTigX0bwb6F81D1pz2qquWT_k24w5hIOE0bYjtzCAOfKM/exec';
+
+  function parseAccountingNumber(str) {
+    var s = String(str || '').trim();
+    if (s === '') return NaN;
+    var isNegative = false;
+    if (s.indexOf('(') > -1 && s.indexOf(')') > -1) {
+      isNegative = true;
+      s = s.replace(/[()]/g, '');
+    }
+    s = s.replace(/[,%]/g, '').trim();
+    var num = parseFloat(s);
+    if (isNaN(num)) return NaN;
+    return isNegative ? -Math.abs(num) : num;
+  }
+
+  function cleanPositiveText(str) {
+    return String(str || '').replace(/[()-]/g, '').trim();
+  }
+
+  window.onload = function() {
+    fetchData('getData');
+  };
+
+  function updateData() {
+    var btn = document.getElementById('updateBtn');
+    var status = document.getElementById('statusText');
+    btn.disabled = true;
+    btn.innerText = '⏳ 正在抓取最新報價並比對...';
+    status.innerText = '更新中，請稍候...';
+
+    fetchData('updateData', function() {
+      btn.disabled = false;
+      btn.innerText = '🔄 更新最新股價與淨值';
+    });
+  }
+
+  function fetchData(action, callback) {
+    fetch(API_URL + '?action=' + action)
+      .then(response => response.json())
+      .then(data => {
+        renderTable(data);
+        if (callback) callback();
+      })
+      .catch(err => {
+        handleError(err);
+        var btn = document.getElementById('updateBtn');
+        btn.disabled = false;
+        btn.innerText = '🔄 更新最新股價與淨值';
+      });
+  }
+
+  function renderTable(data) {
+    var rows = data.rows;
+    document.getElementById('statusText').innerText = '最後更新時間：' + data.updatedAt;
+
+    var thead = document.getElementById('tableHead');
+    var tbody = document.getElementById('tableBody');
+    thead.innerHTML = '';
+    tbody.innerHTML = '';
+
+    if (!rows || rows.length === 0) return;
+
+    var trHead = document.createElement('tr');
+    for (var c = 0; c < 12; c++) {
+      var th = document.createElement('th');
+      th.innerText = rows[0][c] || '';
+      trHead.appendChild(th);
+    }
+    thead.appendChild(trHead);
+
+    var renderLimit = Math.min(rows.length, 23);
+    for (var r = 1; r < renderLimit; r++) {
+      var tr = document.createElement('tr');
+      var isTotalRow = (r === renderLimit - 1 || String(rows[r][0]).indexOf('總') > -1);
+      if (isTotalRow) {
+        tr.className = 'total-row';
+      }
+
+      var currPrice = parseAccountingNumber(rows[r][2]);
+      var prevClose = parseAccountingNumber(rows[r][12]);
+      var pctVal = parseAccountingNumber(rows[r][4]); 
+      var stockCodeStr = String(rows[r][0] || '').trim().toUpperCase();
+
+      var isUsOrFx = (stockCodeStr === 'VOO' || stockCodeStr === 'VWRA' || stockCodeStr === 'GOOGL' || stockCodeStr === 'MU' || stockCodeStr === 'NVDA' || stockCodeStr === 'TSM' || stockCodeStr.indexOf('=X') > -1);
+      var isLimitUp = (!isUsOrFx && !isNaN(pctVal) && pctVal >= 9.85);
+      var isLimitDown = (!isUsOrFx && !isNaN(pctVal) && pctVal <= -9.85);
+
+      for (var c = 0; c < 12; c++) {
+        var td = document.createElement('td');
+        var cellVal = rows[r][c] || '';
+        td.innerText = cellVal;
+
+        if (!isTotalRow) {
+          if (c === 0 || c === 2) {
+            if (isLimitUp) {
+              td.className = 'limit-up';
+            } else if (isLimitDown) {
+              td.className = 'limit-down';
+            }
+          }
+
+          if (c === 2 && !isLimitUp && !isLimitDown) {
+            if (!isNaN(currPrice) && !isNaN(prevClose) && prevClose > 0) {
+              if (currPrice > prevClose) td.className = 'up';
+              else if (currPrice < prevClose) td.className = 'down';
+              else td.className = 'flat';
+            }
+          }
+
+          if (c === 3 && cellVal !== '') {
+            var diffVal = parseAccountingNumber(cellVal);
+            if (!isNaN(diffVal)) {
+              if (diffVal > 0) {
+                td.className = 'up';
+                td.innerText = '▲ ' + cleanPositiveText(cellVal);
+              } else if (diffVal < 0) {
+                td.className = 'down';
+                td.innerText = '▼ ' + cleanPositiveText(cellVal);
+              } else {
+                td.className = 'flat';
+              }
+            }
+          }
+
+          if (c === 4 && cellVal !== '') {
+            if (!isNaN(pctVal)) {
+              if (pctVal > 0) {
+                td.className = 'up';
+              } else if (pctVal < 0) {
+                td.className = 'down';
+                td.innerText = cleanPositiveText(cellVal);
+              } else {
+                td.className = 'flat';
+              }
+            }
+          }
+
+          if (c === 8 || c === 10) {
+            var numVal = parseAccountingNumber(cellVal);
+            if (!isNaN(numVal)) {
+              if (numVal > 0) td.className = 'up';
+              else if (numVal < 0) td.className = 'down';
+            }
+          }
+        } else {
+          if (c === 7 || c === 8 || c === 10 || c === 11) {
+            var totalNum = parseAccountingNumber(cellVal);
+            if (!isNaN(totalNum)) {
+              if (totalNum > 0) td.className = 'up';
+              else if (totalNum < 0) td.className = 'down';
+            }
+          }
+        }
+
+        tr.appendChild(td);
+      }
+      tbody.appendChild(tr);
+    }
+  }
+
+  function handleError(err) {
+    document.getElementById('statusText').innerText = '發生錯誤：' + err.message;
+  }
+</script>
+
+</body>
+</html>
